@@ -100,4 +100,3 @@ O conhecimento adquirido neste módulo servirá como base para os próximos cap�
 ## Próximos Passos
 
 Nos capítulos seguintes, os containers criados neste módulo serão estendidos para hospedar modelos de linguagem, integrar serviços de recuperação de informação, operar pipelines distribuídos e automatizar processos de entrega contínua em ambientes reais de produção.
-
