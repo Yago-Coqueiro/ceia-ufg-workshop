@@ -21,6 +21,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/api_autoreg_uploads"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
 CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "documents")
@@ -68,9 +70,9 @@ def decode_access_token(token: str) -> str:
 
 
 app = FastAPI(
-    title="Document API",
+    title="Document Q&A API",
     description="""
-## Document API
+## Document Q&A API
 
 Receives one or more uploaded documents, saves them, and builds a RAG index with LangChain + OpenAI.
 
@@ -79,7 +81,7 @@ Receives one or more uploaded documents, saves them, and builds a RAG index with
 - Supports retrieval-augmented generation via `/rag/query`
 - Health check endpoint for container orchestration
 """,
-    version="1.0.0",
+    version="1.1.0",
     contact={
         "name": "SEFAZ API Team",
     },
@@ -148,6 +150,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: List[str]
+    provider: str  # "openai" or "gemini"
 
 
 class IndexedDocumentsResponse(BaseModel):
@@ -208,6 +211,7 @@ def _ingest_file(path: Path) -> int:
 
 
 def _run_rag_query(question: str) -> dict | None:
+    import logging
     import chromadb
     from langchain_openai import OpenAIEmbeddings, ChatOpenAI
     from langchain_chroma import Chroma
@@ -226,11 +230,7 @@ def _run_rag_query(question: str) -> dict | None:
         client=client,
     )
     retriever = vs.as_retriever(search_kwargs={"k": 4})
-    llm = ChatOpenAI(
-        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-        api_key=OPENAI_API_KEY,
-        temperature=0,
-    )
+
     prompt = ChatPromptTemplate.from_messages([
         ("human", "Answer the question based on the following context:\n\n{context}\n\nQuestion: {question}"),
     ])
@@ -241,13 +241,34 @@ def _run_rag_query(question: str) -> dict | None:
     source_docs = retriever.invoke(question)
     sources = list({doc.metadata.get("source", "unknown") for doc in source_docs})
 
-    chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
+    def _invoke(llm) -> str:
+        chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
+        )
+        return chain.invoke(question)
+
+    # Primary: OpenAI
+    try:
+        llm = ChatOpenAI(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            api_key=OPENAI_API_KEY,
+            temperature=0,
+        )
+        return {"answer": _invoke(llm), "sources": sources, "provider": "openai"}
+    except Exception as exc:
+        logging.warning("OpenAI LLM failed (%s). Falling back to Google Gemini.", exc)
+
+    # Fallback: Google Gemini
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    llm = ChatGoogleGenerativeAI(
+        model=GOOGLE_MODEL,
+        google_api_key=GOOGLE_API_KEY,
+        temperature=0,
     )
-    return {"answer": chain.invoke(question), "sources": sources}
+    return {"answer": _invoke(llm), "sources": sources, "provider": "gemini"}
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,8 @@ docker run -d \
   -e OPENAI_API_KEY="${OPENAI_API_KEY:?Defina a variável OPENAI_API_KEY}" \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
   -e APP_USER="${APP_USER:-admin:changeme}" \
+  ${GOOGLE_API_KEY:+-e GOOGLE_API_KEY="$GOOGLE_API_KEY"} \
+  ${GOOGLE_MODEL:+-e GOOGLE_MODEL="$GOOGLE_MODEL"} \
   -p 8000:8000 \
   -p 6006:6006 \
   -p 8501:8501 \
