@@ -8,6 +8,23 @@
 | Docker Compose | v2 (bundled with Docker Desktop) |
 | OpenAI API key | — |
 
+---
+
+## Startup Flow
+
+```mermaid
+flowchart LR
+    A(["📝 Create .env\nOPENAI_API_KEY=sk-..."])
+    B["🔨 docker compose\nup --build -d"]
+    C{"Health checks\npassing?"}
+    D(["✅ All services\nready"])
+
+    A --> B --> C -->|"yes (~15 s)"| D
+    C -->|"no"| C
+```
+
+---
+
 ## 1. Clone and configure
 
 ```bash
@@ -15,10 +32,14 @@ git clone <repo-url>
 cd <project-folder>
 ```
 
-Create a `.env` file in the project root with your OpenAI key:
+Create a `.env` file in the project root:
 
 ```bash
+# required
 OPENAI_API_KEY=sk-...
+
+# optional — enables Gemini fallback if OpenAI fails
+GOOGLE_API_KEY=AIza...
 ```
 
 ## 2. Start all services
@@ -45,23 +66,23 @@ docker compose ps
 
 ## 3. Open the services
 
-- **Streamlit UI** → [http://localhost:8501](http://localhost:8501)
-- **Swagger / ReDoc** → [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Phoenix tracing** → [http://localhost:6006](http://localhost:6006)
-- **ChromaDB API** → [http://localhost:8001](http://localhost:8001)
-- **Docs** → [http://localhost:8080](http://localhost:8080)
+| Service | URL |
+|---------|-----|
+| Streamlit UI | [http://localhost:8501](http://localhost:8501) |
+| FastAPI Swagger | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| Arize Phoenix tracing | [http://localhost:6006](http://localhost:6006) |
+| ChromaDB API | [http://localhost:8001](http://localhost:8001) |
+| MkDocs (this site) | [http://localhost:8080](http://localhost:8080) |
 
 ## 4. Default credentials
-
-The default credentials are configured via `APP_USER` in `docker-compose.yml`:
 
 | Field | Default value |
 |-------|---------------|
 | Username | `admin` |
 | Password | `changeme` |
 
-> **Change these before deploying to any shared environment.**
-> Set `APP_USER=youruser:strongpassword` and `SECRET_KEY=<random-64-char-string>` in your environment or `.env`.
+!!! danger "Change before sharing"
+    Set `APP_USER=youruser:strongpassword` and `SECRET_KEY=<random-64-char-string>` in your environment or `.env` before any shared deployment.
 
 ## 5. Quick test with cURL
 
@@ -80,4 +101,15 @@ curl -s -X POST http://localhost:8000/rag/query \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"question": "What is this document about?"}'
+# Response includes "provider": "openai" or "provider": "gemini"
+```
+
+## 6. Stop and clean up
+
+```bash
+# Stop all containers
+docker compose down
+
+# Remove volumes too (destructive — deletes all indexed documents)
+docker compose down -v
 ```

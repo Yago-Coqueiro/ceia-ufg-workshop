@@ -1,99 +1,114 @@
 # RAG Pipeline
 
-This API implements a Retrieval-Augmented Generation (RAG) pipeline using LangChain. Documents are ingested once on upload and queried on demand. The vector store runs in a dedicated ChromaDB container.
+This API implements a **Retrieval-Augmented Generation (RAG)** pipeline using LangChain. Documents are ingested on upload and queried on demand. ChromaDB runs embedded inside the container as a `PersistentClient`.
+
+---
 
 ## Supported File Formats
 
 | Extension | Loader | Notes |
 |-----------|--------|-------|
-| `.pdf` | `PyPDFLoader` | Extracts text from each page |
-| `.txt` | `TextLoader` | UTF-8 encoding assumed |
+| `.pdf` | `PyPDFLoader` | Extracts text from each page; one `Document` per page |
+| `.txt` | `TextLoader` | UTF-8 encoding assumed; one `Document` for the whole file |
 
-Other file types (e.g. `.docx`, `.xlsx`) are accepted by the upload endpoint and saved to disk, but **not** indexed for RAG.
-
----
-
-## Ingestion Flow
-
-```
-Uploaded file
-    │
-    ▼
-Load document
-  ├── .pdf  → PyPDFLoader  (one Document per page)
-  └── .txt  → TextLoader   (one Document for the whole file)
-    │
-    ▼
-RecursiveCharacterTextSplitter
-  chunk_size   = 1 000 characters
-  chunk_overlap = 150 characters
-    │
-    ▼
-OpenAIEmbeddings
-  model: text-embedding-ada-002
-    │
-    ▼
-ChromaDB (via HTTP client)
-  collection: "documents" (configurable via CHROMA_COLLECTION)
-  vs.add_documents(chunks)
-```
-
-> Ingestion is protected by an `asyncio.Lock` so concurrent uploads do not produce duplicate writes within the same API process.
+!!! warning "Unsupported formats"
+    Other file types (`.docx`, `.xlsx`, etc.) are **accepted** by the upload endpoint and saved to disk, but **not** indexed for RAG.
 
 ---
 
-## Query Flow
+## Ingestion Pipeline
 
+```mermaid
+flowchart TD
+    A(["📤 POST /documents\nmultipart upload"])
+    B{File extension?}
+    C["📑 PyPDFLoader\n1 Document per page"]
+    D["📝 TextLoader\n1 Document — UTF-8"]
+    E["💾 Saved to disk\n/data/uploads\n❌ not indexed"]
+    F["✂️ RecursiveCharacterTextSplitter\nchunk_size = 1 000\nchunk_overlap = 150"]
+    G["🔢 OpenAIEmbeddings\ntext-embedding-ada-002"]
+    H[("🗄️ ChromaDB\nPersistentClient\ncollection: documents")]
+    I(["✅ Indexed\nN chunks stored"])
+
+    A --> B
+    B -->|".pdf"| C
+    B -->|".txt"| D
+    B -->|"other"| E
+    C --> F
+    D --> F
+    F --> G
+    G --> H
+    H --> I
 ```
-POST /rag/query { "question": "..." }
-    │
-    ▼
-ChromaDB: collection.count() > 0?  →  No → 404
-    │ Yes
-    ▼
-Retriever: similarity search, k=4
-  → returns top-4 most relevant chunks
-    │
-    ├── Collect source paths for the response
-    │
-    ▼
-LangChain LCEL chain:
-  {"context": retriever | format_docs, "question": passthrough}
-    │
-    ▼
-ChatPromptTemplate
-  "Answer the question based on the following context:
-   {context}
 
-   Question: {question}"
-    │
-    ▼
-ChatOpenAI
-  model: gpt-4o-mini (configurable via OPENAI_MODEL)
-  temperature: 0
-    │
-    ▼
-StrOutputParser
-    │
-    ▼
-Response { "answer": "...", "sources": [...] }
+!!! info "Concurrency"
+    Ingestion is protected by an `asyncio.Lock` so concurrent uploads within the same API process do not produce duplicate writes.
+
+---
+
+## Query Pipeline
+
+```mermaid
+flowchart TD
+    A(["❓ POST /rag/query\n{ question: '...' }"])
+    B{"collection.count() > 0?"}
+    C(["❌ 404\nNo documents indexed"])
+    D["🔍 Retriever\nsimilarity_search\nk = 4"]
+    E["📋 Top-4 chunks\n+ source metadata"]
+    F["🔗 LangChain LCEL Chain\ncontext: retriever | format_docs\nquestion: passthrough"]
+    G["📝 ChatPromptTemplate\n'Answer based on context…'"]
+    H["🤖 ChatOpenAI\ngpt-4o-mini\ntemperature = 0"]
+    I["🔤 StrOutputParser"]
+    J(["✅ 200 Response\n{ answer, sources }"])
+
+    A --> B
+    B -->|"No"| C
+    B -->|"Yes"| D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
+    H --> I
+    I --> J
 ```
 
 ---
 
-## Storage
+## Chunking Strategy
+
+```mermaid
+graph LR
+    subgraph Doc["Original Document (example)"]
+        direction LR
+        T["Lorem ipsum dolor sit amet,\nconsectetur adipiscing elit...\n[2 500 characters total]"]
+    end
+
+    subgraph Chunks["Resulting Chunks"]
+        direction TB
+        C1["Chunk 1\nchars 0–999"]
+        C2["Chunk 2\nchars 850–1849\n← 150 overlap"]
+        C3["Chunk 3\nchars 1699–2499\n← 150 overlap"]
+    end
+
+    Doc -->|"RecursiveCharacterTextSplitter\nchunk_size=1000  overlap=150"| Chunks
+```
+
+---
+
+## Storage Layout
 
 | Path (container) | Content |
 |------------------|---------|
-| `/app/uploads/` | Raw uploaded files (backed by `rag_data` volume) |
-| `/chroma/chroma/` | ChromaDB collection data (backed by `chromadb_data` volume) |
+| `/data/uploads/` | Raw uploaded files (backed by `doc_qa_data` volume) |
+| `/data/chromadb/` | ChromaDB collection data (backed by `doc_qa_data` volume) |
 
-Both volumes persist across container restarts.
+Both paths persist across container restarts via the named volume.
 
 ---
 
 ## Limitations
 
-- ChromaDB does **not deduplicate** by default: uploading the same file twice adds its chunks twice.
-- A single collection (`documents`) is shared globally; there is no per-user or per-collection separation.
-- Large PDFs with many pages may increase ingestion time significantly because each page triggers an embedding API call batch.
+!!! warning
+    - ChromaDB does **not deduplicate** by default: uploading the same file twice adds its chunks twice.
+    - A single collection (`documents`) is shared globally — no per-user or per-session isolation.
+    - Large PDFs with many pages may increase ingestion time because each page triggers an embedding API call.

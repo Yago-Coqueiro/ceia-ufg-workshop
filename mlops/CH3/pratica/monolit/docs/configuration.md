@@ -9,6 +9,8 @@ All runtime configuration is passed via environment variables. In the Docker Com
 | Variable | Default | Required | Description |
 |----------|---------|----------|-------------|
 | `OPENAI_API_KEY` | — | **Yes** | OpenAI API key. Loaded from `.env`. Without this key, uploaded files are saved to disk but **not** indexed for RAG. |
+| `GOOGLE_API_KEY` | — | No | Google AI API key. Required to enable the Gemini fallback. When set, any OpenAI LLM failure during `/rag/query` automatically retries with Gemini. |
+| `GOOGLE_MODEL` | `gemini-2.0-flash` | No | Google Gemini model used as the LLM fallback. |
 | `SECRET_KEY` | `CHANGE_ME_IN_PRODUCTION` | **Yes** | Secret used to sign JWT tokens. Use a random 64-character string in production. |
 | `APP_USER` | `admin:secret` | No | Single-user credentials in `username:password` format. Change the password before any shared deployment. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | No | JWT lifetime in minutes. |

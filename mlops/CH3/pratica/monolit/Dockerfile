@@ -41,7 +41,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     `# API` \
     fastapi "uvicorn[standard]" \
-    langchain langchain-community langchain-openai langchain-chroma \
+    langchain langchain-community langchain-openai langchain-chroma langchain-google-genai \
     chromadb \
     "passlib[bcrypt]" pypdf python-dotenv "python-jose[cryptography]" python-multipart \
     `# Observability` \

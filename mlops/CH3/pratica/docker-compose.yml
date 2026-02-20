@@ -44,7 +44,8 @@ services:
       CHROMA_HOST: "chromadb"
       CHROMA_PORT: "8000"
       OPENAI_MODEL: "gpt-4o-mini"
-    env_file: [.env]          # provides OPENAI_API_KEY
+      GOOGLE_MODEL: "gemini-2.0-flash"
+    env_file: [.env]          # provides OPENAI_API_KEY and optionally GOOGLE_API_KEY
     volumes:
       - .:/app          # bind-mount source for hot reload
       - rag_data:/app/uploads
