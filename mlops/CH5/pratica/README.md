@@ -135,7 +135,19 @@ gcloud auth login
 gcloud config set project SEU_PROJECT_ID
 ```
 
-### 3.2 Criar o repositório no Artifact Registry
+### 3.2 Ativar as APIs necessárias
+
+Antes de criar recursos, ative as APIs usadas pelo pipeline (faz uma vez por projeto):
+
+```bash
+gcloud services enable \
+  cloudbuild.googleapis.com \
+  run.googleapis.com \
+  artifactregistry.googleapis.com \
+  iam.googleapis.com
+```
+
+### 3.3 Criar o repositório no Artifact Registry
 
 ```bash
 gcloud artifacts repositories create docker-images \
@@ -143,14 +155,14 @@ gcloud artifacts repositories create docker-images \
   --location=us-central1
 ```
 
-### 3.3 Criar a Service Account para o pipeline
+### 3.4 Criar a Service Account para o pipeline
 
 ```bash
 gcloud iam service-accounts create github-deployer \
   --display-name="GitHub Actions Deployer"
 ```
 
-Conceder as permissões necessárias:
+Conceder as permissões necessárias (Cloud Build, Cloud Run, Service Account e Storage):
 
 ```bash
 gcloud projects add-iam-policy-binding SEU_PROJECT_ID \
@@ -164,6 +176,10 @@ gcloud projects add-iam-policy-binding SEU_PROJECT_ID \
 gcloud projects add-iam-policy-binding SEU_PROJECT_ID \
   --member="serviceAccount:github-deployer@SEU_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/iam.serviceAccountUser"
+
+gcloud projects add-iam-policy-binding SEU_PROJECT_ID \
+  --member="serviceAccount:github-deployer@SEU_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
 ```
 
 Gerar e baixar a chave JSON:
